@@ -58,8 +58,88 @@ main(int argc, char *argv[])
 }
 
 void
-memdump(char *fmt, char *data)
+printHexNum(uint64 num)
 {
-  // Your code here.
+  char hexDigits[] = "0123456789abcdef";
+  char buf[16];
+  int i = 0;
+  if(num == 0){
+    printf("0\n");
+    return;
+  }
+  while(num > 0){
+    buf[i] = hexDigits[num % 16];
+    num /= 16;
+    i++;
+  }
+  while(i > 0){
+    i--;
+    printf("%c", buf[i]);
+  }
+  printf("\n");
+}
 
+void printInt(char **data)
+{
+  int num;
+  memmove(&num, *data, sizeof(num));
+  printf("%d\n", num);
+  *data += sizeof(num);
+}
+
+void printPtr(char **data)
+{
+  uint64 addr;
+  memmove(&addr, *data, sizeof(addr));
+  printHexNum((uint)addr);
+  *data += sizeof(addr);
+}
+
+void printShort(char **data)
+{
+  ushort num;
+  memmove(&num, *data, sizeof(num));
+  printf("%d\n", num);
+  *data += sizeof(num);
+}
+
+void printChar(char **data)
+{
+  printf("%c\n", **data);
+  (*data)++;
+}
+
+void printStringPtr(char **data)
+{
+  uint64 strAddr;
+  memmove(&strAddr, *data, sizeof(strAddr));
+  printf("%s\n", (char *)strAddr);
+  *data += sizeof(strAddr);
+}
+
+void printString(char **data)
+{
+  printf("%s\n", *data);
+  while(**data != '\0')
+    (*data)++;
+  (*data)++;
+}
+
+void memdump(char *fmt, char *data)
+{
+
+  for(int i = 0; fmt[i] != '\0'; i++){
+    if(fmt[i] == 'i')
+      printInt(&data);
+    else if(fmt[i] == 'p')
+      printPtr(&data);
+    else if(fmt[i] == 'h')
+      printShort(&data);
+    else if(fmt[i] == 'c')
+      printChar(&data);
+    else if(fmt[i] == 's')
+      printStringPtr(&data);
+    else if(fmt[i] == 'S')
+      printString(&data);
+  }
 }
