@@ -124,6 +124,8 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
+  p->interpose_mask = 0;
+  p->allowed_path[0] = '\0';
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -168,6 +170,8 @@ freeproc(struct proc *p)
   p->chan = 0;
   p->killed = 0;
   p->xstate = 0;
+  p->interpose_mask = 0;
+  p->allowed_path[0] = '\0';
   p->state = UNUSED;
 }
 
@@ -275,6 +279,8 @@ kfork(void)
 
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
+  np->interpose_mask = p->interpose_mask;
+  safestrcpy(np->allowed_path, p->allowed_path, MAXPATH);
 
   // Cause fork to return 0 in the child.
   np->trapframe->a0 = 0;

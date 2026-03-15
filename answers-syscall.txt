@@ -1,0 +1,16 @@
+1. usertrap()
+
+2. p->trapframe->a7 - 0xf.
+0xf is 15, which corresponds to SYS_open.
+
+3. The previous CPU mode - user mode.
+
+4. The kernel panicked at the instruction:
+lw a3,0(zero)
+The register corresponding to the variable num - a3.
+
+5. The kernel crashes because it dereferences address 0
+Address 0 is not mapped in the kernel address space, so this causes a load page fault.
+scause=0xd and stval=0x0
+
+6. The process running when the kernel panicked was init, with pid 1.
