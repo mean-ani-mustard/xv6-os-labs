@@ -1,0 +1,35 @@
+0x5B (Valid, Read, Execute, User, Accessed) - User Text Code pages at 0x0 and 0x1000
+
+0x17 (Valid, Read, Write, User) - User Data page at 0x2000
+
+0x07 (Valid, Read, Write) - Guard page at 0x3000. no "User" bit
+
+0xD7 (Valid, Read, Write, User, Accessed, Dirty) - User Stack page at 0x4000
+
+0x00 - Invalid / Unmapped page
+
+0xC7 (Valid, Read, Write, Accessed, Dirty) - Trapframe at 0x3FFFFFE000. no user bit,
+strictly for kernel
+
+0x4B (Valid, Read, Execute, Accessed) - Trampoline at 0x3FFFFFF000. no User bit ->
+the kernel transition code secure
+
+
+
+
+The leaf pages in vmprint are the same real pages as in print_pgtbl,
+but vmprint also prints the intermediate page-table levels.
+
+0x0 and 0x1000 - User Text Code pages
+
+0x2000 - User Data page
+
+0x3000 - Guard page below the stack. no user bit
+
+0x4000 - User Stack page
+
+0x3FFFFFD000 - USYSCALL page. read-only user page for ugetpid()
+
+0x3FFFFFE000 - Trapframe. no user bit, strictly for kernel
+
+0x3FFFFFF000 - Trampoline. no User bit -> kernel trap entry/exit code

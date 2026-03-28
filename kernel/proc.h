@@ -78,8 +78,11 @@ struct trapframe {
   /* 272 */ uint64 t5;
   /* 280 */ uint64 t6;
 };
+struct usyscall ;
 
 enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
+
+
 
 // Per-process state
 struct proc {
@@ -94,6 +97,7 @@ struct proc {
 
   // wait_lock must be held when using this:
   struct proc *parent;         // Parent process
+  struct usyscall *usyscall; 
 
   // these are private to the process, so p->lock need not be held.
   uint64 kstack;               // Virtual address of kernel stack
