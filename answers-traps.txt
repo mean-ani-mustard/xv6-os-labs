@@ -1,0 +1,16 @@
+1. Function arguments - in a0, a1, a2, a3, a4, a5, a6, a7. In main’s call to printf, 
+the value 13 is in a2.
+
+2. There is no call to f or g in main. The compiler inlined them. In main,
+ f(8)+1 is simplified to li a1,12. Also, inside f there is no call to g; f directly does addiw a0,a0,3.
+
+3.  0x73e.
+
+4. the address of the next instruction - 0x3c.
+
+5. He110 World
+
+  i - 0x726c6400.  57616 would not need to change.
+
+6.  unpredictable garbage value. The reason is that printf expects two integers, but 
+only one is provided, so it reads whatever value happens to be in the next argument location/register.

@@ -110,6 +110,7 @@ static struct proc*
 allocproc(void)
 {
   struct proc *p;
+  
 
   for(p = proc; p < &proc[NPROC]; p++) {
     acquire(&p->lock);
@@ -124,6 +125,10 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
+  p->alarm_interval = 0;
+  p->alarm_ticks_left = 0;
+  p->alarm_handler = 0;
+  p->alarm_active = 0;
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
