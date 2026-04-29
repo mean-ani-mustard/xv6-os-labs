@@ -121,38 +121,75 @@ release(struct spinlock *lk)
 }
 
 #ifdef LAB_LOCK
+
+
 static void
 read_acquire_inner(struct rwspinlock *rwlk)
 {
-  // Replace this with your implementation.
-  acquire(&rwlk->l);
+  for(;;){
+    acquire(&rwlk->lock);
+
+    if(rwlk->writer == 0 && rwlk->waiting_writers == 0){
+      rwlk->readers++;
+      release(&rwlk->lock);
+      break;
+    }
+
+    release(&rwlk->lock);
+  }
 }
 
 static void
 read_release_inner(struct rwspinlock *rwlk)
 {
-  // Replace this with your implementation.
-  release(&rwlk->l);
+  acquire(&rwlk->lock);
+
+  if(rwlk->readers <= 0)
+    panic("read_release");
+
+  rwlk->readers--;
+
+  release(&rwlk->lock);
 }
 
 static void
 write_acquire_inner(struct rwspinlock *rwlk)
 {
-  // Replace this with your implementation.
-  acquire(&rwlk->l);
+  acquire(&rwlk->lock);
+  rwlk->waiting_writers++;
+  release(&rwlk->lock);
+
+  for(;;){
+    acquire(&rwlk->lock);
+
+    if(rwlk->writer == 0 && rwlk->readers == 0){
+      rwlk->waiting_writers--;
+      rwlk->writer = 1;
+      release(&rwlk->lock);
+      break;
+    }
+
+    release(&rwlk->lock);
+  }
 }
 
 static void
 write_release_inner(struct rwspinlock *rwlk)
 {
-  // Replace this with your implementation.
-  release(&rwlk->l);
+  acquire(&rwlk->lock);
+
+  if(rwlk->writer == 0)
+    panic("write_release");
+
+  rwlk->writer = 0;
+
+  release(&rwlk->lock);
 }
 
 void
 read_acquire(struct rwspinlock *rwlk)
 {
-  push_off(); // disable interrupts to avoid deadlock.
+  push_off();
   read_acquire_inner(rwlk);
 }
 
@@ -166,7 +203,7 @@ read_release(struct rwspinlock *rwlk)
 void
 write_acquire(struct rwspinlock *rwlk)
 {
-  push_off(); // disable interrupts to avoid deadlock.
+  push_off();
   write_acquire_inner(rwlk);
 }
 
@@ -180,8 +217,10 @@ write_release(struct rwspinlock *rwlk)
 void
 initrwlock(struct rwspinlock *rwlk)
 {
-  // Replace this with your implementation.
-  initlock(&rwlk->l, "rwlk");
+  initlock(&rwlk->lock, "rwlk");
+  rwlk->readers = 0;
+  rwlk->writer = 0;
+  rwlk->waiting_writers = 0;
 }
 
 // Test rwspinlock implementation.
