@@ -42,3 +42,25 @@ entry("getpid");
 entry("sbrk");
 entry("pause");
 entry("uptime");
+
+print "#ifdef LAB_MMAP\n";
+entry("mmap");
+entry("munmap");
+print "#endif\n";
+
+print "#ifdef LAB_NET\n";
+entry("bind");
+entry("unbind");
+entry("send");
+entry("recv");
+print "#endif\n";
+
+print "#ifdef LAB_PGTBL\n";
+entry("pgpte");
+entry("kpgtbl");
+print "#endif\n";
+
+print "#ifdef LAB_LOCK\n";
+entry("rwlktest");
+entry("cpupin");
+print "#endif\n";

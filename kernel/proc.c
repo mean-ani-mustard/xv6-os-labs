@@ -124,6 +124,12 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
+  #ifdef LAB_MMAP
+  for(int i = 0; i < NVMA; i++){
+    p->vmas[i].used = 0;
+    p->vmas[i].file = 0;
+  }
+  #endif
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -273,6 +279,15 @@ kfork(void)
   }
   np->sz = p->sz;
 
+  #ifdef LAB_MMAP
+  for(i = 0; i < NVMA; i++){
+    np->vmas[i] = p->vmas[i];
+    if(np->vmas[i].used)
+      filedup(np->vmas[i].file);
+  }
+  #endif
+
+
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
 
@@ -327,6 +342,13 @@ kexit(int status)
 
   if(p == initproc)
     panic("init exiting");
+  
+  #ifdef LAB_MMAP
+  for(int i = 0; i < NVMA; i++){
+    if(p->vmas[i].used)
+      mmap_unmap(p, p->vmas[i].addr, p->vmas[i].len);
+  }
+  #endif
 
   // Close all open files.
   for(int fd = 0; fd < NOFILE; fd++){

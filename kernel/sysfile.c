@@ -15,6 +15,7 @@
 #include "sleeplock.h"
 #include "file.h"
 #include "fcntl.h"
+#include "memlayout.h"
 
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
@@ -503,3 +504,208 @@ sys_pipe(void)
   }
   return 0;
 }
+
+#ifdef LAB_MMAP
+
+static int
+overlap(uint64 a0, uint64 a1, uint64 b0, uint64 b1)
+{
+  return a0 < b1 && b0 < a1;
+}
+
+static uint64
+mmap_find_addr(struct proc *p, uint64 len)
+{
+  uint64 addr = MMAPBASE;
+
+  if(addr < PGROUNDUP(p->sz))
+    addr = PGROUNDUP(p->sz);
+
+  for(;;){
+    int found_overlap = 0;
+
+    if(addr + len >= TRAPFRAME)
+      return 0;
+
+    for(int i = 0; i < NVMA; i++){
+      if(p->vmas[i].used &&
+         overlap(addr, addr + len, p->vmas[i].addr, p->vmas[i].addr + p->vmas[i].len)){
+        addr = PGROUNDUP(p->vmas[i].addr + p->vmas[i].len);
+        found_overlap = 1;
+        break;
+      }
+    }
+
+    if(!found_overlap)
+      return addr;
+  }
+}
+
+uint64
+sys_mmap(void)
+{
+  uint64 addr, len, offset;
+  int prot, flags, fd;
+  struct file *f;
+  struct proc *p = myproc();
+
+  argaddr(0, &addr);
+  argaddr(1, &len);
+  argint(2, &prot);
+  argint(3, &flags);
+  if(argfd(4, &fd, &f) < 0)
+    return -1;
+  argaddr(5, &offset);
+
+  if(addr != 0 || len == 0 || offset != 0)
+    return -1;
+
+  if((prot & PROT_READ) && !f->readable)
+    return -1;
+
+  if((prot & PROT_WRITE) && (flags & MAP_SHARED) && !f->writable)
+    return -1;
+
+  len = PGROUNDUP(len);
+
+  struct vma *v = 0;
+  for(int i = 0; i < NVMA; i++){
+    if(!p->vmas[i].used){
+      v = &p->vmas[i];
+      break;
+    }
+  }
+
+  if(v == 0)
+    return -1;
+
+  uint64 mapaddr = mmap_find_addr(p, len);
+  if(mapaddr == 0)
+    return -1;
+
+  v->used = 1;
+  v->addr = mapaddr;
+  v->len = len;
+  v->prot = prot;
+  v->flags = flags;
+  v->file = filedup(f);
+  v->offset = offset;
+
+  return mapaddr;
+}
+
+static int
+mmap_writeback(struct file *f, uint64 src, uint64 off, int n)
+{
+  int max = ((MAXOPBLOCKS - 1 - 1 - 2) / 2) * BSIZE;
+  int i = 0;
+
+  while(i < n){
+    int n1 = n - i;
+    if(n1 > max)
+      n1 = max;
+
+    begin_op();
+    ilock(f->ip);
+
+    uint64 fileoff = off + i;
+
+    // Do not extend the file when writing back mmap pages.
+    if(fileoff >= f->ip->size){
+      iunlock(f->ip);
+      end_op();
+      return 0;
+    }
+
+    if(fileoff + n1 > f->ip->size)
+      n1 = f->ip->size - fileoff;
+
+    int r = writei(f->ip, 0, src + i, fileoff, n1);
+
+    iunlock(f->ip);
+    end_op();
+
+    if(r != n1)
+      return -1;
+
+    i += r;
+  }
+
+  return 0;
+}
+
+int
+mmap_unmap(struct proc *p, uint64 addr, uint64 len)
+{
+  if(len == 0)
+    return -1;
+
+  if(addr % PGSIZE)
+    return -1;
+
+  len = PGROUNDUP(len);
+
+  struct vma *v = 0;
+  for(int i = 0; i < NVMA; i++){
+    if(p->vmas[i].used &&
+       addr >= p->vmas[i].addr &&
+       addr < p->vmas[i].addr + p->vmas[i].len){
+      v = &p->vmas[i];
+      break;
+    }
+  }
+
+  if(v == 0)
+    return 0;
+
+  if(addr + len > v->addr + v->len)
+    len = v->addr + v->len - addr;
+
+  if(addr != v->addr && addr + len != v->addr + v->len){
+    return -1;}
+
+    if(v->flags & MAP_SHARED){
+    for(uint64 a = addr; a < addr + len; a += PGSIZE){
+      pte_t *pte = walk(p->pagetable, a, 0);
+      if(pte == 0 || (*pte & PTE_V) == 0)
+        continue;
+
+      uint64 pa = PTE2PA(*pte);
+
+      int n = PGSIZE;
+      if(a + n > addr + len)
+        n = addr + len - a;
+
+      if(mmap_writeback(v->file, pa, v->offset + (a - v->addr), n) < 0)
+        return -1;
+    }
+  }
+
+  uvmunmap(p->pagetable, addr, len / PGSIZE, 1);
+  if(addr == v->addr && len == v->len){
+    fileclose(v->file);
+    v->used = 0;
+    v->file = 0;
+  } else if(addr == v->addr){
+    v->addr += len;
+    v->offset += len;
+    v->len -= len;
+  } else {
+    v->len -= len;
+  }
+
+  return 0;
+}
+
+uint64
+sys_munmap(void)
+{
+  uint64 addr, len;
+
+  argaddr(0, &addr);
+  argaddr(1, &len);
+
+  return mmap_unmap(myproc(), addr, len);
+}
+
+#endif

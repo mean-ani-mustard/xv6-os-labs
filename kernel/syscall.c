@@ -102,6 +102,25 @@ extern uint64 sys_link(void);
 extern uint64 sys_mkdir(void);
 extern uint64 sys_close(void);
 
+#ifdef LAB_NET
+extern uint64 sys_bind(void);
+extern uint64 sys_unbind(void);
+extern uint64 sys_send(void);
+extern uint64 sys_recv(void);
+#endif
+#ifdef LAB_PGTBL
+extern uint64 sys_pgpte(void);
+extern uint64 sys_kpgtbl(void);
+#endif
+#ifdef LAB_LOCK
+extern uint64 sys_cpupin(void);
+#endif
+
+#ifdef LAB_MMAP
+extern uint64 sys_mmap(void);
+extern uint64 sys_munmap(void);
+#endif
+
 // An array mapping syscall numbers from syscall.h
 // to the function that handles the system call.
 static uint64 (*syscalls[])(void) = {
@@ -126,6 +145,24 @@ static uint64 (*syscalls[])(void) = {
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
+#ifdef LAB_MMAP
+[SYS_mmap]    sys_mmap,
+[SYS_munmap]  sys_munmap,
+#endif
+#ifdef LAB_NET
+[SYS_bind] sys_bind,
+[SYS_unbind] sys_unbind,
+[SYS_send] sys_send,
+[SYS_recv] sys_recv,
+#endif
+#ifdef LAB_PGTBL
+[SYS_pgpte] sys_pgpte,
+[SYS_kpgtbl] sys_kpgtbl,
+#endif
+#ifdef LAB_LOCK
+[SYS_rwlktest] sys_rwlktest,
+[SYS_cpupin] sys_cpupin,
+#endif
 };
 
 void
