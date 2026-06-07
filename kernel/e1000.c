@@ -16,6 +16,8 @@ static struct rx_desc rx_ring[RX_RING_SIZE] __attribute__((aligned(16)));
 // remember where the e1000's registers live.
 static volatile uint32 *regs;
 
+static char *tx_mbufs[TX_RING_SIZE];
+
 struct spinlock e1000_lock;
 
 // called by pci_init().
@@ -38,7 +40,6 @@ e1000_init(uint32 *xregs)
   regs[E1000_IMS] = 0; // redisable interrupts
   __sync_synchronize();
 
-  // [E1000 14.5] Transmit initialization
   memset(tx_ring, 0, sizeof(tx_ring));
   for (i = 0; i < TX_RING_SIZE; i++) {
     tx_ring[i].status = E1000_TXD_STAT_DD;
@@ -50,7 +51,6 @@ e1000_init(uint32 *xregs)
   regs[E1000_TDLEN] = sizeof(tx_ring);
   regs[E1000_TDH] = regs[E1000_TDT] = 0;
   
-  // [E1000 14.4] Receive initialization
   memset(rx_ring, 0, sizeof(rx_ring));
   for (i = 0; i < RX_RING_SIZE; i++) {
     rx_ring[i].addr = (uint64) kalloc();
@@ -90,35 +90,70 @@ e1000_init(uint32 *xregs)
   regs[E1000_IMS] = (1 << 7); // RXDW -- Receiver Descriptor Write Back
 }
 
-int
+
+  int
 e1000_transmit(char *buf, int len)
 {
-  //
-  // Your code here.
-  //
-  // buf contains an ethernet frame; program it into
-  // the TX descriptor ring so that the e1000 sends it. Stash
-  // a pointer so that it can be freed after send completes.
-  //
-  // return 0 on success.
-  // return -1 on failure (e.g., there is no descriptor available)
-  // so that the caller knows to free buf.
-  //
+  acquire(&e1000_lock);
 
-  
+  uint32 idx = regs[E1000_TDT];
+
+  if((tx_ring[idx].status & E1000_TXD_STAT_DD) == 0){
+    release(&e1000_lock);
+    return -1;
+  }
+
+  if(tx_mbufs[idx] != 0){
+    kfree(tx_mbufs[idx]);
+    tx_mbufs[idx] = 0;
+  }
+
+  tx_ring[idx].addr = (uint64)buf;
+  tx_ring[idx].length = len;
+  tx_ring[idx].cmd = E1000_TXD_CMD_EOP | E1000_TXD_CMD_RS;
+  tx_ring[idx].status = 0;
+
+  tx_mbufs[idx] = buf;
+
+  regs[E1000_TDT] = (idx + 1) % TX_RING_SIZE;
+
+  release(&e1000_lock);
   return 0;
 }
+  
+  
 
-static void
+void
 e1000_recv(void)
 {
-  //
-  // Your code here.
-  //
-  // Check for packets that have arrived from the e1000
-  // Create and deliver a buf for each packet (using net_rx()).
-  //
+  acquire(&e1000_lock);
 
+
+  uint32 idx = (regs[E1000_RDT] + 1) % RX_RING_SIZE;
+
+  while(rx_ring[idx].status & E1000_RXD_STAT_DD){
+    char *buf = (char *)rx_ring[idx].addr;
+    int len = rx_ring[idx].length;
+
+
+
+    char *newbuf = kalloc();
+    if(newbuf == 0)
+      panic("e1000_recv");
+
+    rx_ring[idx].addr = (uint64)newbuf;
+    rx_ring[idx].status = 0;
+
+    regs[E1000_RDT] = idx;
+
+    release(&e1000_lock);
+    net_rx(buf, len);
+    acquire(&e1000_lock);
+
+    idx = (idx + 1) % RX_RING_SIZE;
+  }
+
+  release(&e1000_lock);
 }
 
 void

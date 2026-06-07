@@ -10,6 +10,7 @@
 #include "file.h"
 #include "net.h"
 
+
 // xv6's ethernet and IP addresses
 static uint8 local_mac[ETHADDR_LEN] = { 0x52, 0x54, 0x00, 0x12, 0x34, 0x56 };
 static uint32 local_ip = MAKE_IP_ADDR(10, 0, 2, 15);
@@ -18,11 +19,34 @@ static uint32 local_ip = MAKE_IP_ADDR(10, 0, 2, 15);
 static uint8 host_mac[ETHADDR_LEN] = { 0x52, 0x55, 0x0a, 0x00, 0x02, 0x02 };
 
 static struct spinlock netlock;
+#define MAX_PORTS 16
+#define MAX_PACKETS 16
 
+struct udp_packet {
+  char *buf;
+  int len;
+  int src;
+  short sport;
+  struct udp_packet *next;
+};
+
+struct udp_port {
+  int used;
+  short port;
+  int count;
+  struct udp_packet *head;
+  struct udp_packet *tail;
+};
+
+static struct {
+  struct spinlock lock;
+  struct udp_port ports[MAX_PORTS];
+} udp_table;
 void
 netinit(void)
 {
   initlock(&netlock, "netlock");
+  initlock(&udp_table.lock, "udp_table");
 }
 
 
@@ -34,10 +58,31 @@ netinit(void)
 uint64
 sys_bind(void)
 {
-  //
-  // Your code here.
-  //
+  int port;
+  argint(0, &port);
 
+  acquire(&udp_table.lock);
+
+  for(int i = 0; i < MAX_PORTS; i++){
+    if(udp_table.ports[i].used && udp_table.ports[i].port == port){
+      release(&udp_table.lock);
+      return 0;
+    }
+  }
+
+  for(int i = 0; i < MAX_PORTS; i++){
+    if(!udp_table.ports[i].used){
+      udp_table.ports[i].used = 1;
+      udp_table.ports[i].port = port;
+      udp_table.ports[i].count = 0;
+      udp_table.ports[i].head = 0;
+      udp_table.ports[i].tail = 0;
+      release(&udp_table.lock);
+      return 0;
+    }
+  }
+
+  release(&udp_table.lock);
   return -1;
 }
 
@@ -74,10 +119,70 @@ sys_unbind(void)
 uint64
 sys_recv(void)
 {
-  //
-  // Your code here.
-  //
-  return -1;
+  int dport;
+  uint64 src_addr;
+  uint64 sport_addr;
+  uint64 buf_addr;
+  int maxlen;
+
+  argint(0, &dport);
+  argaddr(1, &src_addr);
+  argaddr(2, &sport_addr);
+  argaddr(3, &buf_addr);
+  argint(4, &maxlen);
+
+  struct proc *p_proc = myproc();
+
+  acquire(&udp_table.lock);
+
+  struct udp_port *p = 0;
+  for(int i = 0; i < MAX_PORTS; i++){
+    if(udp_table.ports[i].used && udp_table.ports[i].port == dport){
+      p = &udp_table.ports[i];
+      break;
+    }
+  }
+
+  if(p == 0){
+    release(&udp_table.lock);
+    return -1;
+  }
+
+  while(p->head == 0){
+    sleep(p, &udp_table.lock);
+  }
+
+  struct udp_packet *pkt = p->head;
+  p->head = pkt->next;
+
+  if(p->head == 0)
+    p->tail = 0;
+
+  p->count--;
+
+  release(&udp_table.lock);
+
+  int n = pkt->len;
+  if(n > maxlen)
+    n = maxlen;
+
+  struct eth *eth = (struct eth *)pkt->buf;
+  struct ip *ip = (struct ip *)(eth + 1);
+  struct udp *udp = (struct udp *)(ip + 1);
+  char *payload = (char *)(udp + 1);
+
+  if(copyout(p_proc->pagetable, src_addr, (char *)&pkt->src, sizeof(pkt->src)) < 0 ||
+     copyout(p_proc->pagetable, sport_addr, (char *)&pkt->sport, sizeof(pkt->sport)) < 0 ||
+     copyout(p_proc->pagetable, buf_addr, payload, n) < 0){
+    kfree(pkt->buf);
+    kfree((char *)pkt);
+    return -1;
+  }
+
+  kfree(pkt->buf);
+  kfree((char *)pkt);
+
+  return n;
 }
 
 // This code is lifted from FreeBSD's ping.c, and is copyright by the Regents
@@ -182,16 +287,74 @@ sys_send(void)
 void
 ip_rx(char *buf, int len)
 {
-  // don't delete this printf; make grade depends on it.
-  static int seen_ip = 0;
-  if(seen_ip == 0)
-    printf("ip_rx: received an IP packet\n");
-  seen_ip = 1;
+  if(len < sizeof(struct eth) + sizeof(struct ip) + sizeof(struct udp)){
+    kfree(buf);
+    return;
+  }
+  printf("ip_rx: received an IP packet\n");
 
-  //
-  // Your code here.
-  //
-  
+  struct eth *eth = (struct eth *)buf;
+  struct ip *ip = (struct ip *)(eth + 1);
+
+  if(ip->ip_p != IPPROTO_UDP){
+    kfree(buf);
+    return;
+  }
+
+  struct udp *udp = (struct udp *)(ip + 1);
+
+  short dport = ntohs(udp->dport);
+  short sport = ntohs(udp->sport);
+  int src = ntohl(ip->ip_src);
+  int ulen = ntohs(udp->ulen);
+
+  if(ulen < sizeof(struct udp)){
+    kfree(buf);
+    return;
+  }
+
+  int payload_len = ulen - sizeof(struct udp);
+
+  acquire(&udp_table.lock);
+
+  struct udp_port *p = 0;
+  for(int i = 0; i < MAX_PORTS; i++){
+    if(udp_table.ports[i].used && udp_table.ports[i].port == dport){
+      p = &udp_table.ports[i];
+      break;
+    }
+  }
+
+  if(p == 0 || p->count >= MAX_PACKETS){
+    release(&udp_table.lock);
+    kfree(buf);
+    return;
+  }
+
+  struct udp_packet *pkt = (struct udp_packet *)kalloc();
+  if(pkt == 0){
+    release(&udp_table.lock);
+    kfree(buf);
+    return;
+  }
+
+  pkt->buf = buf;
+  pkt->len = payload_len;
+  pkt->src = src;
+  pkt->sport = sport;
+  pkt->next = 0;
+
+  if(p->tail)
+    p->tail->next = pkt;
+  else
+    p->head = pkt;
+
+  p->tail = pkt;
+  p->count++;
+
+  wakeup(p);
+
+  release(&udp_table.lock);
 }
 
 //
