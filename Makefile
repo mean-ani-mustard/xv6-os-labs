@@ -408,3 +408,6 @@ check-qemu-version:
 		echo "ERROR: Need qemu version >= $(MIN_QEMU_VERSION)"; \
 		exit 1; \
 	fi
+
+# Prevent unsafe RISC-V linker relaxation for uthread
+CFLAGS += -mno-relax
