@@ -32,7 +32,7 @@ kexec(char *path, char **argv)
   struct elfhdr elf;
   struct inode *ip;
   struct proghdr ph;
-  pagetable_t pagetable = 0, oldpagetable;
+  pagetable_t pagetable = 0, kpagetable = 0, oldpagetable, oldkpagetable;
   struct proc *p = myproc();
 
   begin_op();
@@ -126,18 +126,33 @@ kexec(char *path, char **argv)
     if(*s == '/')
       last = s+1;
   safestrcpy(p->name, last, sizeof(p->name));
+
+  if((kpagetable = proc_kpagetable(p)) == 0)
+    goto bad;
+  if(uvmkmap(pagetable, kpagetable, 0, sz) < 0)
+    goto bad;
     
   // Commit to the user image.
   oldpagetable = p->pagetable;
+  oldkpagetable = p->kpagetable;
   p->pagetable = pagetable;
+  p->kpagetable = kpagetable;
   p->sz = sz;
   p->trapframe->epc = elf.entry;  // initial program counter = ulib.c:start()
   p->trapframe->sp = sp; // initial stack pointer
+  w_satp(MAKE_SATP(p->kpagetable));
+  sfence_vma();
   proc_freepagetable(oldpagetable, oldsz);
+  kvmfree(oldkpagetable);
+
+  if(p->pid == 1)
+    vmprint(p->pagetable);
 
   return argc; // this ends up in a0, the first argument to main(argc, argv)
 
  bad:
+  if(kpagetable)
+    kvmfree(kpagetable);
   if(pagetable)
     proc_freepagetable(pagetable, sz);
   if(ip){

@@ -1,3 +1,4 @@
-When two threads try to add data to the same spot at the same time, they both link their new items to the exact same starting
-point. Then, the thread that saves last completely overwrites the first thread's work. This leaves the first thread's data 
+When two threads try to add data to the same spot at the same time, 
+both link their new items to the same starting point. The thread that saves last
+completely overwrites the first thread's work. This leaves the first thread's data 
 cut off and permanently lost, which is why keys go missing.
