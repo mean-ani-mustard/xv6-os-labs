@@ -94,6 +94,9 @@ OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
 
 CFLAGS = -Wall -Werror -O -fno-omit-frame-pointer -ggdb -gdwarf-2
+# Newer GCC versions diagnose an unused bookkeeping variable in the supplied
+# usertests source; the lab explicitly asks students not to edit that file.
+CFLAGS += -Wno-unused-but-set-variable
 
 ifdef LAB
 LABUPPER = $(shell echo $(LAB) | tr a-z A-Z)
@@ -310,6 +313,9 @@ ifndef CPUS
 CPUS := 3
 endif
 ifeq ($(LAB),fs)
+CPUS := 1
+endif
+ifeq ($(LAB),perproc)
 CPUS := 1
 endif
 

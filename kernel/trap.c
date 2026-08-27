@@ -74,8 +74,10 @@ usertrap(void)
     // page fault on lazily-allocated page
 #endif
   } else {
+#ifndef LAB_PERPROC
     printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
     printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
+#endif
     setkilled(p);
   }
 
@@ -218,4 +220,3 @@ devintr()
     return 0;
   }
 }
-
